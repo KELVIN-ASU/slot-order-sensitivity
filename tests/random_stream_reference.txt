@@ -1,0 +1,59 @@
+def seed_worker(worker_id: int) -> None:
+    worker_seed = torch.initial_seed() % (2**32)
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+
+def set_global_seed(seed: int) -> None:
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = True
+    torch.use_deterministic_algorithms(True, warn_only=False)
+
+def make_generator(seed: int) -> torch.Generator:
+    generator = torch.Generator(device="cpu")
+    generator.manual_seed(int(seed))
+    return generator
+
+def make_device_generator(device, seed: int) -> torch.Generator:
+    generator = torch.Generator(device=device)
+    generator.manual_seed(int(seed))
+    return generator
+
+def make_slot_init_noise(features, mode: str, draw_seed: int, stream_generator=None):
+    if mode not in CFG.initialization_modes:
+        raise ValueError(f"Unknown initialization mode: {mode}")
+
+    batch = features.shape[0]
+    dim = features.shape[-1]
+    device = features.device
+    dtype = features.dtype
+
+    if mode == "fixed_shared":
+        generator = make_device_generator(device, draw_seed)
+        base = torch.randn(1, CFG.num_slots, dim, generator=generator, device=device, dtype=dtype)
+        return base.expand(batch, -1, -1).contiguous()
+
+    if stream_generator is None:
+        stream_generator = make_device_generator(device, draw_seed)
+
+    if mode == "per_example_stochastic":
+        return torch.randn(batch, CFG.num_slots, dim, generator=stream_generator, device=device, dtype=dtype)
+
+    # The same four vectors are retained, but each image receives a different assignment.
+    base_generator = make_device_generator(device, CFG.slot_init_seed)
+    base = torch.randn(1, CFG.num_slots, dim, generator=base_generator, device=device, dtype=dtype)
+    base = base.expand(batch, -1, -1)
+
+    random_scores = torch.rand(batch, CFG.num_slots, generator=stream_generator, device=device, dtype=dtype)
+    permutations = torch.argsort(random_scores, dim=1)
+    gather_index = permutations.unsqueeze(-1).expand(-1, -1, dim)
+
+    return torch.gather(base, 1, gather_index).contiguous()
