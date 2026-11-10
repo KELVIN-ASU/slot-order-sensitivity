@@ -107,8 +107,6 @@ Each run writes a manifest (`run_manifest.json`) with the configuration, softwar
 
 The reported run used Python 3.12, PyTorch 2.10 with CUDA 13.0, and one NVIDIA RTX 5090 GPU, and took about 25 hours.
 
-The backbone notebook does not set random seeds, so retraining the backbone gives a different checkpoint. Use the released checkpoint to reproduce the reported results.
-
 ## Installation
 
 ```bash
